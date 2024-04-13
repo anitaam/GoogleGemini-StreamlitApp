@@ -99,7 +99,7 @@ def extract_user_question(prompt_response):
             return part.text.split("Question:")[1].strip()
 
 def pre_load():
-    pre_loaded_pdfs = ['cata.pdf']
+    pre_loaded_pdfs = ['catalogue.pdf']
     texts = extract_text(pre_loaded_pdfs)
     chunk = get_chunks(texts)
     get_embeddings_and_store_pdf(chunk)
