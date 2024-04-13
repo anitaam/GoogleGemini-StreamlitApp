@@ -4,20 +4,15 @@ import os
 import time
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
-from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings,GoogleGenerativeAI,ChatGoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativeAI, ChatGoogleGenerativeAI
 from langchain_community.vectorstores import FAISS
-from PIL import Image
-import json
-
 
 st.set_page_config(
     page_title="ChatCUD",
     page_icon="💬",
-    )
+)
 
-gemini_config = {'temperature': 0.7, 'top_p': 1, 'top_k': 1, 'max_output_tokens': 2048}
 page_config = {
     st.markdown(
     "<h1 style='text-align: center; color: #b22222; font-family: Arial, sans-serif; background-color: #292f4598;'>chatCUD 💬</h1>",
@@ -26,32 +21,27 @@ page_config = {
     st.markdown("<h4 style='text-align: center; color: white; font-size: 20px; animation: bounce-and-pulse 60s infinite;'>Your CUD AI Assistant</h4>", unsafe_allow_html=True),
 }
 
+gemini_config = {'temperature': 0.7, 'top_p': 1, 'top_k': 1, 'max_output_tokens': 2048}
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model=genai.GenerativeModel(model_name="models/gemini-pro",generation_config=gemini_config)
+model = genai.GenerativeModel(model_name="models/gemini-pro", generation_config=gemini_config)
 
-#Extracting and Splitting PDF
+# Extracting and Splitting PDF
 def extract_text(list_of_uploaded_files):
-    pdf_text=''
+    pdf_text = ''
     for uploaded_pdfs in list_of_uploaded_files:
-        read_pdf=PdfReader(uploaded_pdfs)
+        read_pdf = PdfReader(uploaded_pdfs)
         for page in read_pdf.pages:
-            pdf_text+=page.extract_text()
-    
-    
+            pdf_text += page.extract_text()
     return pdf_text
-    
 
 def get_chunks(text):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=4000)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=9000, chunk_overlap=900)
     chunks = text_splitter.split_text(text)
     return chunks
 
-
-#Embedding and storing the pdf Local
+# Embedding and storing the pdf Local
 def get_embeddings_and_store_pdf(chunk_text):
-    if not isinstance(chunk_text, list):
-        raise ValueError("Text must be a list of text documents")
     try:
         embedding_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
         create_embedding = FAISS.from_texts(chunk_text, embedding=embedding_model)
@@ -59,14 +49,15 @@ def get_embeddings_and_store_pdf(chunk_text):
     except Exception as e:
         st.error(f"Error creating embeddings: {e}")
 
-#Generating user response for the pdf
+# Generating user response for the pdf
 def get_generated_user_input(user_question):
+    
     # Initialize Google Generative AI Embeddings with the specified model
     text_embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    
+
     # Load stored embeddings using FAISS, allowing dangerous deserialization
     stored_embeddings = FAISS.load_local("embeddings_index", text_embedding, allow_dangerous_deserialization=True)
-    
+
     # Search for similarity between user question and stored embeddings
     check_pdf_similarity = stored_embeddings.similarity_search(user_question)
 
@@ -78,26 +69,27 @@ def get_generated_user_input(user_question):
     # Return the response
     return pdf_response
 
-#Clearing Chat 
+# Clearing Chat 
 def clear_chat_convo():
-    st.session_state.chat_history.history=[]
+    if len(st.session_state.chat_history.history) > 1:
+        st.session_state.chat_history.history = [st.session_state.chat_history.history[0]]
 
-#Changing Role Names/Icons
-def role_name(role):    
-    if role == "model":  
-        return "bot.png"  
-    elif role=='user':
+# Changing Role Names/Icons
+def role_name(role):
+    if role == "model":
+        return "bot.png"
+    elif role == 'user':
         return 'user.png'
     else:
         return None 
 
-#Text Splits
+# Text Splits
 def stream(response):
     for word in response.text.split(" "):
         yield word + " "
         time.sleep(0.04)
 
-#Extracts the user question from pdf prompt in get_generated_user_input() 
+# Extracts the user question from pdf prompt in get_generated_user_input() 
 def extract_user_question(prompt_response):
     # Iterate through the parts of the prompt response in reverse order
     for part in reversed(prompt_response):
@@ -106,7 +98,15 @@ def extract_user_question(prompt_response):
             # Split the text after "Question:" and return the extracted user question
             return part.text.split("Question:")[1].strip()
 
+def pre_load():
+    pre_loaded_pdfs = ['cata.pdf']
+    texts = extract_text(pre_loaded_pdfs)
+    chunk = get_chunks(texts)
+    get_embeddings_and_store_pdf(chunk)
+
 def main():
+    pre_load()
+
     # Opening CSS File
     # Read the contents of 'dark.css' file and embed it in the HTML style tag
     with open('dark.css') as f:
@@ -116,11 +116,12 @@ def main():
     # Start a conversation using the model, initially with an empty history
     start_conversation = model.start_chat(history=[])
 
+
     # Check if 'chat_history' is not already in the session state
     if "chat_history" not in st.session_state:
         # If not, initialize 'chat_history' with the start of the conversation
         st.session_state.chat_history = start_conversation
-    
+
     # Iterate over each message in the chat history
     for message in st.session_state.chat_history.history:
         # Get the role name of the message and fetch corresponding avatar if available
@@ -130,17 +131,17 @@ def main():
             # Display the message with the role's avatar
             with st.chat_message(message.role, avatar=avatar):
                 # Check if the message has 'content' in its parts
-                if "content" in message.parts[0].text: 
+                if "content" in message.parts[0].text:
                     # Extract the user's question from the message parts (if available)
                     user_question = extract_user_question(message.parts)
                     # Check if a user question is extracted
                     if user_question:
                         # Display the user question using Markdown
                         st.markdown(user_question)
-                else:  
+                else:
                     # If 'content' is not found in the parts, display the message text using Markdown
                     st.markdown(message.parts[0].text)
-            
+
     # Get user input from the chat interface
     user_question = st.chat_input("Ask ChatCUD...")
 
@@ -150,15 +151,10 @@ def main():
         with st.chat_message("user", avatar="user.png"):
             st.write(user_question)
 
-            # Pre-load PDFs and extract text from them
-            pre_loaded_pdfs=['catalogue.pdf']
-            texts = extract_text(pre_loaded_pdfs) 
-            chunk=get_chunks(texts)
-            get_embeddings_and_store_pdf(chunk)
-        
+
         # Get generated responses for the user input
         responses = get_generated_user_input(user_question)
-        
+
         # If responses are generated
         if responses:
             # Display the responses with assistant's avatar
@@ -167,12 +163,8 @@ def main():
                 st.write_stream(stream(responses))
 
     # Add a button in the sidebar to clear the chat history
-    st.sidebar.button("Click to Clear Chat History", on_click=clear_chat_convo)
+    st.sidebar.button("Clear Chat", on_click=clear_chat_convo)
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
