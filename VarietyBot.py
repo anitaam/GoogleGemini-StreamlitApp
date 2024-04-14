@@ -166,12 +166,14 @@ def main():
         generated_prompt = get_generated_user_input(user_question)
 
         if generated_prompt:
-            prompt = f"You are a helpful AI assistant at the Canadian University Dubai, this is the information given\n{generated_prompt}?\n to answer this q make it sound more helpful\nQuestion: \n{user_question}"
+            prompt = f"You are a helpful AI assistant at the Canadian University Dubai be helpful, dont give irrevelent information or anything that is not mentioned here \n{generated_prompt}?\n for this question \nQuestion: \n{user_question}"
             response = st.session_state.chat_history.send_message(prompt)
+            
             with st.chat_message("assistant", avatar="bot.png"):
                 st.write_stream(stream(response))
                     
     st.sidebar.button("Click to Clear Chat History", on_click=clear_chat_convo)
+
 if __name__ == "__main__":
     main()
 
