@@ -29,45 +29,19 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 model = genai.GenerativeModel(model_name="models/gemini-pro", generation_config=gemini_config)
 
-import streamlit as st
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv
-from PyPDF2 import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.vectorstores import FAISS
-from langchain.chains.question_answering import load_qa_chain
-from langchain.prompts import PromptTemplate
-import time
-
-gemini_config = {'temperature': 0.8, 'top_p': 1, 'top_k': 1, 'max_output_tokens': 2048}
-page_config = {st.title('🤖🌐 VarietyBot'),
-st.caption("Please ensure clarity in your questions for a smooth conversation. If you've uploaded a PDF, just mention 'my pdf' in your questions. Otherwise, ask usual questions for AI-Generated answers ☺")
-}
-load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model=genai.GenerativeModel(model_name="models/gemini-pro",generation_config=gemini_config)
-
 # Function to extract text from uploaded PDF files
 def extract_text(upload):
-    # Initialize an empty string to store extracted text
-    pdf_text = ''
-    # Loop through each uploaded PDF file
-    for pdf in upload:
-        # Read the PDF file
-        read_pdf = PdfReader(pdf)
-        # Loop through each page in the PDF file
-        for page in read_pdf.pages:
-            # Extract text from the current page and append it to pdf_text
-            pdf_text += page.extract_text()
-    # Return the extracted text
-    return pdf_text
-
+    with open(upload, 'rb') as f:
+        read = PdfReader(f)
+        results = []
+        for page in read.pages:
+            text = page.extract_text()
+            results.append(text)
+        return ''.join(results)
 # Function to split text into smaller chunks
 def get_chunks(text):
     # Initialize a text splitter object with specified chunk size and overlap
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=9000, chunk_overlap=900)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
     # Split the text into chunks using the text splitter
     chunks = text_splitter.split_text(text)
     # Return the chunks
@@ -82,16 +56,7 @@ def get_embeddings_and_store_pdf(chunk_text):
     # Save the created embeddings locally
     create_embedding.save_local("embeddings_index")
 
-# Function to get user input and generate responses based on similarity to stored PDFs
-def get_generated_user_input(user_question):
-    # Initialize a Google Generative AI Embeddings model
-    text_embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    # Load stored embeddings from local storage
-    stored_embeddings = FAISS.load_local("embeddings_index", text_embedding, allow_dangerous_deserialization=True)
-    # Perform similarity search based on user question
-    check_pdf_similarity = stored_embeddings.similarity_search(user_question)
-
-    # Define a prompt template for generating responses
+def conversation():
     my_prompt = '''
     Answer the following question with the given context:
     Context:\n{context}?\n
@@ -103,20 +68,30 @@ def get_generated_user_input(user_question):
     prompt_template = PromptTemplate(template=my_prompt, input_variables=["context", "question"])
     # Load a question answering conversation chain
     conversation_chain = load_qa_chain(model, chain_type="stuff", prompt=prompt_template)
-    # Generate response based on user question and similarity search results
-    response = conversation_chain({"input_documents": check_pdf_similarity, "question": user_question}, return_only_outputs=True)
-    # Return the generated response text
-    return response['output_text']
+
+    return conversation_chain
+
+
+# Function to get user input and generate responses based on similarity to stored PDFs
+def get_generated_user_input(user_question):
+    # Initialize a Google Generative AI Embeddings model
+    text_embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    # Load stored embeddings from local storage
+    stored_embeddings = FAISS.load_local("embeddings_index", text_embedding, allow_dangerous_deserialization=True)
+    check_pdf_similarity = stored_embeddings.similarity_search(user_question)
+    chain=conversation()
+    response=chain({"input_documents":check_pdf_similarity,"question":user_question},return_only_outputs=True)
+    return response["output_text"]
+
 
 # Function to handle user responses
 def user_response(user_question):
     # Generate a response based on the user question
     generated_prompt = get_generated_user_input(user_question)
     # Construct a prompt for the user interaction
-    prompt = f"You are a helpful AI assistant at the Canadian University Dubai, this is the information given based on the user question return this but make it sound better\n{generated_prompt}?\n do not be irrelevant\nQuestion: \n{user_question}"
+    prompt = f"You are a helpful AI assistant at the Canadian University Dubai, this is the information given\n{generated_prompt}?\n to answer this q make it sound more helpful\nQuestion: \n{user_question}"
     # Send the prompt and get the response
     response = st.session_state.chat_history.send_message(prompt)
-    # Return the response text
     return response.text
 
 # Function to clear chat conversation history
@@ -149,8 +124,6 @@ def extract_user_question(prompt_response):
         if "Question:" in part.text:
             # Split the text after "Question:" and return the extracted user question
             return part.text.split("Question:")[1].strip()
-
-
 def main():
     with open('dark.css') as f:
         # Apply the CSS style to the page
@@ -179,42 +152,26 @@ def main():
                 else:
                     # If 'content' is not found in the parts, display the message text using Markdown
                     st.markdown(message.parts[0].text)
-
     
-    st.sidebar.markdown("<div style='display: flex; justify-content: center;'><h3>Choose One To Proceed</h3></div>", unsafe_allow_html=True)
-    with st.sidebar:
-        st.sidebar.markdown("<div style='display: flex; justify-content: center;'><h3>Chat PDF File <h3></div>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload One Or More PDF Files", type="pdf",accept_multiple_files=True)
-        if uploaded_file is not None:
-            if st.sidebar.button("Process PDF File"):
-                with st.spinner("Processing..."):
-                    try:
-                        texts = extract_text(uploaded_file)
-                        chunk=get_chunks(texts)
-                        get_embeddings_and_store_pdf(chunk)
-                        st.success("Proceed to asking PDF")
-                    except Exception as e:
-                        st.error(f"Error during PDF processing: {e}")
-        else:
-            st.sidebar.info("Upload PDF to proceed")
-
+    texts = extract_text('student_hand_book.pdf')
+    chunk=get_chunks(texts)
+    get_embeddings_and_store_pdf(chunk)
 
     user_question = st.chat_input("Ask chatCUD...")
 
     if user_question is not None and user_question.strip() != "":
-        try: 
-            with st.chat_message("user"):
-                st.write(user_question)
+        with st.chat_message("user", avatar="user.png"):
+            st.write(user_question)
 
-            response = user_response(user_question)
+        generated_prompt = get_generated_user_input(user_question)
 
-            if response:
-                with st.chat_message("assistant"):
-                    st.markdown(response)
-
-        except Exception as e:
-            st.error(f"Error handling User Question: {e}")
-
+        if generated_prompt:
+            prompt = f"You are a helpful AI assistant at the Canadian University Dubai, this is the information given\n{generated_prompt}?\n to answer this q make it sound more helpful\nQuestion: \n{user_question}"
+            response = st.session_state.chat_history.send_message(prompt)
+            with st.chat_message("assistant", avatar="bot.png"):
+                st.write_stream(stream(response))
+                    
     st.sidebar.button("Click to Clear Chat History", on_click=clear_chat_convo)
 if __name__ == "__main__":
     main()
+
