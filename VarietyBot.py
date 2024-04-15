@@ -58,7 +58,7 @@ def get_embeddings_and_store_pdf(chunk_text):
 
 def conversation():
     my_prompt = '''
-    Answer the following question with the given context:
+    Answer the following question, make sure to provide all the detail with the given context:
     Context:\n{context}?\n
     Question:\n{question}\n
     '''
@@ -82,17 +82,6 @@ def get_generated_user_input(user_question):
     chain=conversation()
     response=chain({"input_documents":check_pdf_similarity,"question":user_question},return_only_outputs=True)
     return response["output_text"]
-
-
-# Function to handle user responses
-def user_response(user_question):
-    # Generate a response based on the user question
-    generated_prompt = get_generated_user_input(user_question)
-    # Construct a prompt for the user interaction
-    prompt = f"You are a helpful AI assistant at the Canadian University Dubai, this is the information given\n{generated_prompt}?\n to answer this q make it sound more helpful\nQuestion: \n{user_question}"
-    # Send the prompt and get the response
-    response = st.session_state.chat_history.send_message(prompt)
-    return response.text
 
 # Function to clear chat conversation history
 def clear_chat_convo():
@@ -124,6 +113,23 @@ def extract_user_question(prompt_response):
         if "Question:" in part.text:
             # Split the text after "Question:" and return the extracted user question
             return part.text.split("Question:")[1].strip()
+        
+def user_input_response(user_question):
+    if user_question:
+        generated_prompt = get_generated_user_input(user_question)
+        prompt = f"You are a AI assistant at the Canadian University Dubai,be helpful dont give irrevelent information/links or any extra info that is not mentioned here \n{generated_prompt}?\n for this question,if it is not CUD related do not answer it \nQuestion: \n{user_question}"
+        response = st.session_state.chat_history.send_message(prompt)
+        
+        with st.sidebar:
+            st.write("this is info from pdf similarity searc(pdf is fully there), for test purposes ")
+            st.write(generated_prompt)
+
+
+        return response
+
+
+
+
 def main():
     with open('dark.css') as f:
         # Apply the CSS style to the page
@@ -135,7 +141,7 @@ def main():
         st.session_state.chat_history = start_conversation
     
     for message in st.session_state.chat_history.history:
-        # Get the role name of the message and fetch corresponding avatar if available
+    # Get the role name of the message and fetch corresponding avatar if available
         avatar = role_name(message.role)
         # Check if avatar exists
         if avatar:
@@ -149,9 +155,10 @@ def main():
                     if user_question:
                         # Display the user question using Markdown
                         st.markdown(user_question)
-                else:
-                    # If 'content' is not found in the parts, display the message text using Markdown
-                    st.markdown(message.parts[0].text)
+                # Display the message content
+                    else:
+                        st.markdown(message.parts[0].text)
+
     
     texts = extract_text('student_hand_book.pdf')
     chunk=get_chunks(texts)
@@ -160,18 +167,17 @@ def main():
     user_question = st.chat_input("Ask chatCUD...")
 
     if user_question is not None and user_question.strip() != "":
+
+        
         with st.chat_message("user", avatar="user.png"):
             st.write(user_question)
+        
+        responses=user_input_response(user_question)
 
-        generated_prompt = get_generated_user_input(user_question)
-
-        if generated_prompt:
-            prompt = f"You are a helpful AI assistant at the Canadian University Dubai be helpful, dont give irrevelent information or anything that is not mentioned here \n{generated_prompt}?\n for this question \nQuestion: \n{user_question}"
-            response = st.session_state.chat_history.send_message(prompt)
-            
+        if responses:
             with st.chat_message("assistant", avatar="bot.png"):
-                st.write_stream(stream(response))
-                    
+                st.write_stream(stream(responses))
+                        
     st.sidebar.button("Click to Clear Chat History", on_click=clear_chat_convo)
 
 if __name__ == "__main__":
